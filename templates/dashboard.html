@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel | Real-Time Log Vector Anomaly Monitor</title>
+    <!-- Tailwind CSS for Enterprise UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .animate-pulse-fast { animation: pulse-red 1s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+</head>
+<body class="h-full flex flex-col font-mono antialiased">
+
+    <!-- Top Navigation Bar -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <div class="h-3 w-3 rounded-full bg-emerald-500 animate-pulse"></div>
+            <h1 class="text-lg font-bold tracking-wider text-slate-100">SENTINEL <span class="text-xs font-normal px-2 py-0.5 rounded bg-slate-800 text-slate-400 ml-2">v1.0.0</span></h1>
+        </div>
+        <div class="flex items-center space-x-6 text-xs text-slate-400">
+            <div>STATUS: <span id="connection-status" class="text-amber-400 font-semibold">CONNECTING...</span></div>
+            <div>ENGINE: <span class="text-slate-200">SentenceTransformer + ChromaDB</span></div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
+
+        <!-- Metrics Cards Header -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                <div class="text-xs font-medium text-slate-500 uppercase">Detection Strategy</div>
+                <div class="text-base font-semibold text-slate-200 mt-1">Vector Cosine Distance</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                <div class="text-xs font-medium text-slate-500 uppercase">Distance Cutoff Threshold</div>
+                <div class="text-base font-semibold text-amber-400 mt-1">&gt; 0.6500 Distance</div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-lg p-4">
+                <div class="text-xs font-medium text-slate-500 uppercase">Total Anomaly Alerts</div>
+                <div id="alert-counter" class="text-base font-semibold text-rose-500 mt-1">0</div>
+            </div>
+        </section>
+
+        <!-- Live Telemetry Terminal Feed -->
+        <section class="flex-1 bg-slate-900 border border-slate-800 rounded-lg flex flex-col overflow-hidden">
+            <div class="bg-slate-950/60 px-4 py-3 border-b border-slate-800 flex justify-between items-center text-xs text-slate-400">
+                <span class="font-semibold uppercase text-slate-300">Live Security Anomaly Stream</span>
+                <span>WebSockets: <code class="text-emerald-400">/ws/alerts</code></span>
+            </div>
+            
+            <div id="terminal-feed" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs leading-relaxed">
+                <!-- Live alerts will be dynamically prepended here -->
+                <div class="text-slate-600 italic" id="empty-state">Listening for log stream telemetry from Kafka topic...</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- JavaScript WebSocket Listener -->
+    <script>
+        let totalAlerts = 0;
+        const terminalFeed = document.getElementById('terminal-feed');
+        const emptyState = document.getElementById('empty-state');
+        const alertCounter = document.getElementById('alert-counter');
+        const statusElement = document.getElementById('connection-status');
+
+        // Establish WebSocket Connection
+        const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/alerts`;
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            statusElement.innerText = "ONLINE";
+            statusElement.className = "text-emerald-400 font-semibold";
+        };
+
+        ws.onclose = () => {
+            statusElement.innerText = "DISCONNECTED";
+            statusElement.className = "text-rose-500 font-semibold";
+        };
+
+        ws.onmessage = (event) => {
+            if (emptyState) emptyState.remove();
+
+            const data = JSON.parse(event.data);
+            totalAlerts++;
+            alertCounter.innerText = totalAlerts;
+
+            // Create Alert Card
+            const card = document.createElement('div');
+            card.className = "bg-rose-950/30 border border-rose-900/50 rounded p-3 text-slate-300 flex flex-col gap-1 transition-all duration-300";
+
+            card.innerHTML = `
+                <div class="flex items-center justify-between text-[11px] text-rose-400 font-semibold">
+                    <span class="flex items-center gap-2">
+                        <span class="h-2 w-2 rounded-full bg-rose-500 animate-pulse-fast"></span>
+                        ${data.alert_type || 'ANOMALY_DETECTED'}
+                    </span>
+                    <span>DISTANCE: <span class="text-rose-200 font-bold">${data.distance}</span></span>
+                </div>
+                <div class="text-slate-200 font-mono text-xs break-all mt-1">${data.raw_log}</div>
+                <div class="flex gap-4 text-[10px] text-slate-500 mt-1">
+                    <span>IP: ${data.metadata.ip || 'N/A'}</span>
+                    <span>ENDPOINT: ${data.metadata.endpoint || 'N/A'}</span>
+                    <span>STATUS: ${data.metadata.status_code || 'N/A'}</span>
+                    <span>TIME: ${data.metadata.timestamp || 'N/A'}</span>
+                </div>
+            `;
+
+            terminalFeed.prepend(card);
+        };
+    </script>
+</body>
+</html>
